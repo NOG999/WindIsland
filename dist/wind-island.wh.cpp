@@ -551,16 +551,20 @@ void GlassBackdrop::Draw(
         borderBrush_.Get(),
         std::max(0.5f, theme.borderWidth));
 
-    // A subtle top-edge highlight gives the surface depth without creating
-    // the bright outline associated with an Apple-style pill.
-    D2D1_ROUNDED_RECT highlight = bounds;
-    highlight.rect.left += 1.0f;
-    highlight.rect.top += 1.0f;
-    highlight.rect.right -= 1.0f;
-    highlight.rect.bottom = highlight.rect.top + 1.0f;
+    // Draw a subtle inner rim to create depth while keeping the surface
+    // consistent with Windows 11 glass styling.
+    D2D1_ROUNDED_RECT innerHighlight = bounds;
+
+    innerHighlight.rect.left += 1.0f;
+    innerHighlight.rect.top += 1.0f;
+    innerHighlight.rect.right -= 1.0f;
+    innerHighlight.rect.bottom -= 1.0f;
+
+    innerHighlight.radiusX = std::max(0.0f, bounds.radiusX - 1.0f);
+    innerHighlight.radiusY = std::max(0.0f, bounds.radiusY - 1.0f);
 
     target_->DrawRoundedRectangle(
-        highlight,
+        innerHighlight,
         highlightBrush_.Get(),
         1.0f);
 }
