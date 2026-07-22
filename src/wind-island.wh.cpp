@@ -262,6 +262,8 @@ The Dynamic Island intelligently expands to display context-aware dashboards. Yo
 
 #include "Core/ThemeManager.h"
 #include "Rendering/GlassBackdrop.h"
+#include "Core/ThemeManager.cpp"
+#include "Rendering/GlassBackdrop.cpp"
 
 using Microsoft::WRL::ComPtr;
 using namespace std::chrono_literals;
