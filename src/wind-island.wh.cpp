@@ -260,6 +260,9 @@ The Dynamic Island intelligently expands to display context-aware dashboards. Yo
 #define DYNAMIC_ISLAND_HAS_USER_NOTIFICATION_LISTENER 0
 #endif
 
+#include "Core/ThemeManager.h"
+#include "Rendering/GlassBackdrop.h"
+
 using Microsoft::WRL::ComPtr;
 using namespace std::chrono_literals;
 
@@ -2959,6 +2962,12 @@ class Renderer {
             return false;
         }
 
+        themeManager_.SetPreset(windisland::ThemePreset::SystemGlass);
+        themeManager_.RefreshSystemColors();
+        if (!glassBackdrop_.Initialize(target_.Get())) {
+        return false;
+        }
+
         // Apple SF Pro-like: use Segoe UI Variable Display for clean modern look.
         dwriteFactory_->CreateTextFormat(L"Segoe UI Variable Display", nullptr,
                                          DWRITE_FONT_WEIGHT_SEMI_BOLD,
@@ -5200,6 +5209,10 @@ class Renderer {
     ComPtr<ID2D1Bitmap> notificationIconBitmap_;
     ComPtr<ID2D1Bitmap> mediaSourceIconBitmap_;
     ComPtr<ID2D1Bitmap> clipboardIconBitmap_;
+
+    windisland::ThemeManager themeManager_;
+    windisland::GlassBackdrop glassBackdrop_;
+
     uint64_t artGeneration_ = 0;
     uint64_t notificationIconGeneration_ = 0;
     uint64_t mediaSourceIconGeneration_ = 0;
