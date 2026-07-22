@@ -260,10 +260,313 @@ The Dynamic Island intelligently expands to display context-aware dashboards. Yo
 #define DYNAMIC_ISLAND_HAS_USER_NOTIFICATION_LISTENER 0
 #endif
 
-#include "Core/ThemeManager.h"
-#include "Rendering/GlassBackdrop.h"
-#include "Core/ThemeManager.cpp"
-#include "Rendering/GlassBackdrop.cpp"
+// BEGIN src\Core\ThemeManager.h
+#pragma once
+
+// BEGIN src\Core\ThemeTypes.h
+#pragma once
+
+#include <d2d1.h>
+#include <windows.h>
+
+namespace windisland {
+
+enum class ThemePreset {
+    SystemGlass,
+    OledBlack,
+    ClearAcrylic,
+};
+
+struct ThemeColor {
+    float r = 0.0f;
+    float g = 0.0f;
+    float b = 0.0f;
+    float a = 1.0f;
+
+    constexpr D2D1_COLOR_F ToD2D() const noexcept {
+        return D2D1::ColorF(r, g, b, a);
+    }
+};
+
+struct GlassTheme {
+    ThemePreset preset = ThemePreset::SystemGlass;
+
+    ThemeColor surface{0.035f, 0.040f, 0.050f, 0.72f};
+    ThemeColor border{0.70f, 0.75f, 0.82f, 0.22f};
+    ThemeColor innerHighlight{1.0f, 1.0f, 1.0f, 0.07f};
+    ThemeColor primaryText{0.96f, 0.96f, 0.98f, 1.0f};
+    ThemeColor secondaryText{0.68f, 0.70f, 0.75f, 1.0f};
+    ThemeColor accent{0.0f, 0.47f, 0.84f, 1.0f};
+    ThemeColor shadow{0.0f, 0.0f, 0.0f, 0.45f};
+
+    float cornerRadius = 24.0f;
+    float borderWidth = 1.0f;
+    float blurAmount = 28.0f;
+    float shadowBlur = 24.0f;
+};
+
+}  // namespace windisland
+// END src\Core\ThemeTypes.h
+
+namespace windisland {
+
+class ThemeManager {
+public:
+    ThemeManager() = default;
+
+    void SetPreset(ThemePreset preset) noexcept;
+    void RefreshSystemColors() noexcept;
+
+    [[nodiscard]] const GlassTheme& Current() const noexcept {
+        return current_;
+    }
+
+private:
+    static ThemeColor ResolveWindowsAccent() noexcept;
+    static bool IsSystemDarkMode() noexcept;
+    void Rebuild() noexcept;
+
+    ThemePreset preset_ = ThemePreset::SystemGlass;
+    GlassTheme current_{};
+};
+
+}  // namespace windisland
+// END src\Core\ThemeManager.h
+// BEGIN src\Rendering\GlassBackdrop.h
+#pragma once
+
+#include <d2d1.h>
+#include <wrl/client.h>
+
+// BEGIN src\Core\ThemeTypes.h
+
+// END src\Core\ThemeTypes.h
+
+namespace windisland {
+
+class GlassBackdrop {
+public:
+    bool Initialize(ID2D1RenderTarget* target) noexcept;
+    void Reset() noexcept;
+
+    void Draw(
+        const D2D1_ROUNDED_RECT& bounds,
+        const GlassTheme& theme) noexcept;
+
+private:
+    bool EnsureBrushes(const GlassTheme& theme) noexcept;
+
+    ID2D1RenderTarget* target_ = nullptr;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> surfaceBrush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> borderBrush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> highlightBrush_;
+
+    GlassTheme cachedTheme_{};
+    bool hasCachedTheme_ = false;
+};
+
+}  // namespace windisland
+// END src\Rendering\GlassBackdrop.h
+// BEGIN src\Core\ThemeManager.cpp
+// BEGIN src\Core\ThemeManager.h
+
+// END src\Core\ThemeManager.h
+
+#include <dwmapi.h>
+
+namespace windisland {
+namespace {
+
+ThemeColor FromColorRef(COLORREF color, float alpha = 1.0f) noexcept {
+    return {
+        GetRValue(color) / 255.0f,
+        GetGValue(color) / 255.0f,
+        GetBValue(color) / 255.0f,
+        alpha,
+    };
+}
+
+}  // namespace
+
+void ThemeManager::SetPreset(ThemePreset preset) noexcept {
+    preset_ = preset;
+    Rebuild();
+}
+
+void ThemeManager::RefreshSystemColors() noexcept {
+    Rebuild();
+}
+
+ThemeColor ThemeManager::ResolveWindowsAccent() noexcept {
+    DWORD color = 0;
+    BOOL opaque = FALSE;
+
+    if (SUCCEEDED(DwmGetColorizationColor(&color, &opaque))) {
+        const COLORREF rgb = RGB(
+            (color >> 16) & 0xFF,
+            (color >> 8) & 0xFF,
+            color & 0xFF);
+        return FromColorRef(rgb);
+    }
+
+    return {0.0f, 0.47f, 0.84f, 1.0f};
+}
+
+bool ThemeManager::IsSystemDarkMode() noexcept {
+    DWORD value = 0;
+    DWORD size = sizeof(value);
+
+    const LSTATUS status = RegGetValueW(
+        HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        L"AppsUseLightTheme",
+        RRF_RT_REG_DWORD,
+        nullptr,
+        &value,
+        &size);
+
+    return status == ERROR_SUCCESS ? value == 0 : true;
+}
+
+void ThemeManager::Rebuild() noexcept {
+    GlassTheme next{};
+    next.preset = preset_;
+    next.accent = ResolveWindowsAccent();
+
+    switch (preset_) {
+        case ThemePreset::SystemGlass:
+            if (IsSystemDarkMode()) {
+                next.surface = {0.035f, 0.040f, 0.050f, 0.72f};
+                next.border = {0.70f, 0.75f, 0.82f, 0.22f};
+                next.primaryText = {0.96f, 0.96f, 0.98f, 1.0f};
+                next.secondaryText = {0.68f, 0.70f, 0.75f, 1.0f};
+            } else {
+                next.surface = {0.93f, 0.94f, 0.96f, 0.72f};
+                next.border = {0.15f, 0.17f, 0.20f, 0.18f};
+                next.primaryText = {0.08f, 0.09f, 0.11f, 1.0f};
+                next.secondaryText = {0.30f, 0.32f, 0.36f, 1.0f};
+            }
+            break;
+
+        case ThemePreset::OledBlack:
+            next.surface = {0.0f, 0.0f, 0.0f, 0.96f};
+            next.border = {1.0f, 1.0f, 1.0f, 0.14f};
+            next.innerHighlight = {1.0f, 1.0f, 1.0f, 0.04f};
+            next.blurAmount = 0.0f;
+            break;
+
+        case ThemePreset::ClearAcrylic:
+            next.surface = {0.055f, 0.060f, 0.075f, 0.48f};
+            next.border = {0.80f, 0.84f, 0.90f, 0.28f};
+            next.innerHighlight = {1.0f, 1.0f, 1.0f, 0.10f};
+            next.blurAmount = 38.0f;
+            break;
+    }
+
+    current_ = next;
+}
+
+}  // namespace windisland
+// END src\Core\ThemeManager.cpp
+// BEGIN src\Rendering\GlassBackdrop.cpp
+// BEGIN src\Rendering\GlassBackdrop.h
+
+// END src\Rendering\GlassBackdrop.h
+
+#include <algorithm>
+
+namespace windisland {
+namespace {
+
+bool SameColor(const ThemeColor& a, const ThemeColor& b) noexcept {
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+bool SameBrushTheme(const GlassTheme& a, const GlassTheme& b) noexcept {
+    return SameColor(a.surface, b.surface) &&
+           SameColor(a.border, b.border) &&
+           SameColor(a.innerHighlight, b.innerHighlight);
+}
+
+}  // namespace
+
+bool GlassBackdrop::Initialize(ID2D1RenderTarget* target) noexcept {
+    Reset();
+    target_ = target;
+    return target_ != nullptr;
+}
+
+void GlassBackdrop::Reset() noexcept {
+    surfaceBrush_.Reset();
+    borderBrush_.Reset();
+    highlightBrush_.Reset();
+    target_ = nullptr;
+    hasCachedTheme_ = false;
+}
+
+bool GlassBackdrop::EnsureBrushes(const GlassTheme& theme) noexcept {
+    if (!target_) {
+        return false;
+    }
+
+    if (hasCachedTheme_ && SameBrushTheme(cachedTheme_, theme) &&
+        surfaceBrush_ && borderBrush_ && highlightBrush_) {
+        return true;
+    }
+
+    surfaceBrush_.Reset();
+    borderBrush_.Reset();
+    highlightBrush_.Reset();
+
+    if (FAILED(target_->CreateSolidColorBrush(
+            theme.surface.ToD2D(), surfaceBrush_.GetAddressOf()))) {
+        return false;
+    }
+
+    if (FAILED(target_->CreateSolidColorBrush(
+            theme.border.ToD2D(), borderBrush_.GetAddressOf()))) {
+        return false;
+    }
+
+    if (FAILED(target_->CreateSolidColorBrush(
+            theme.innerHighlight.ToD2D(), highlightBrush_.GetAddressOf()))) {
+        return false;
+    }
+
+    cachedTheme_ = theme;
+    hasCachedTheme_ = true;
+    return true;
+}
+
+void GlassBackdrop::Draw(
+    const D2D1_ROUNDED_RECT& bounds,
+    const GlassTheme& theme) noexcept {
+    if (!EnsureBrushes(theme)) {
+        return;
+    }
+
+    target_->FillRoundedRectangle(bounds, surfaceBrush_.Get());
+    target_->DrawRoundedRectangle(
+        bounds,
+        borderBrush_.Get(),
+        std::max(0.5f, theme.borderWidth));
+
+    // A subtle top-edge highlight gives the surface depth without creating
+    // the bright outline associated with an Apple-style pill.
+    D2D1_ROUNDED_RECT highlight = bounds;
+    highlight.rect.left += 1.0f;
+    highlight.rect.top += 1.0f;
+    highlight.rect.right -= 1.0f;
+    highlight.rect.bottom = highlight.rect.top + 1.0f;
+
+    target_->DrawRoundedRectangle(
+        highlight,
+        highlightBrush_.Get(),
+        1.0f);
+}
+
+}  // namespace windisland
+// END src\Rendering\GlassBackdrop.cpp
 
 using Microsoft::WRL::ComPtr;
 using namespace std::chrono_literals;
